@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine3.20 AS builder
+FROM golang:1.27-alpine3.24 AS builder
 
 ENV GOARCH $TARGETARCH
 ENV CGO_ENABLED=0
