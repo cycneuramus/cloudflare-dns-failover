@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	cf "github.com/cloudflare/cloudflare-go"
 )
@@ -11,59 +10,51 @@ import (
 type DNSState struct {
 	ActiveIP string
 	ID       string
-	Mutex    sync.RWMutex
 }
 
-func (s *DNSState) UpdateActiveIP(newIP string) {
-	s.Mutex.Lock()
-	defer s.Mutex.Unlock()
-	s.ActiveIP = newIP
-}
-
-func (s *DNSState) GetActiveIP() string {
-	s.Mutex.RLock()
-	defer s.Mutex.RUnlock()
-	return s.ActiveIP
-}
-
-func (s *DNSState) GetID() string {
-	s.Mutex.RLock()
-	defer s.Mutex.RUnlock()
-	return s.ID
-}
-
-func fetchARecords(api *cf.API, ctx context.Context, r Record) ([]cf.DNSRecord, error) {
-	records, _, err := api.ListDNSRecords(ctx, cf.ZoneIdentifier(r.ZoneID), cf.ListDNSRecordsParams{Name: r.Domain, Type: "A"})
+func fetchARecords(api *cf.API, ctx context.Context, rec Record) ([]cf.DNSRecord, error) {
+	records, _, err := api.ListDNSRecords(ctx, cf.ZoneIdentifier(rec.ZoneID), cf.ListDNSRecordsParams{Name: rec.Domain, Type: "A"})
 	return records, err
 }
 
-func updateARecord(ctx context.Context, api *cf.API, r Record, s *DNSState, ip string) error {
-	updateRecord := cf.UpdateDNSRecordParams{
-		Type:    "A",
-		Name:    r.Domain,
-		Content: ip,
-		ID:      s.GetID(),
-		TTL:     1,
-		Proxied: &r.Proxied,
+func fetchInitialState(ctx context.Context, api *cf.API, rec Record) (*DNSState, error) {
+	records, err := fetchARecords(api, ctx, rec)
+	if err != nil {
+		return nil, fmt.Errorf("fetching DNS record for %s: %w", rec.Domain, err)
 	}
 
-	_, err := api.UpdateDNSRecord(ctx, cf.ZoneIdentifier(r.ZoneID), updateRecord)
+	if len(records) == 0 {
+		return nil, fmt.Errorf("no A record found for %s", rec.Domain)
+	}
+
+	return &DNSState{ActiveIP: records[0].Content, ID: records[0].ID}, nil
+}
+
+func updateARecord(ctx context.Context, api *cf.API, rec Record, state *DNSState, ip string) error {
+	updateRecord := cf.UpdateDNSRecordParams{
+		Type:    "A",
+		Name:    rec.Domain,
+		Content: ip,
+		ID:      state.ID,
+		TTL:     1,
+		Proxied: &rec.Proxied,
+	}
+
+	_, err := api.UpdateDNSRecord(ctx, cf.ZoneIdentifier(rec.ZoneID), updateRecord)
 	return err
 }
 
-func manageDNS(ctx context.Context, api *cf.API, r Record, s *DNSState, responsiveIP string, logCh chan<- logEntry) {
-	activeIP := s.GetActiveIP()
-	if activeIP == responsiveIP {
-		sendLogEntry(logCh, r.Domain, fmt.Sprintf("%s: already set to %s", r.Domain, responsiveIP))
-		return
+func ensureIP(ctx context.Context, api *cf.API, rec Record, state *DNSState, ip string) (string, error) {
+	if state.ActiveIP == ip {
+		return fmt.Sprintf("already set to %s", ip), nil
 	}
 
-	err := updateARecord(ctx, api, r, s, responsiveIP)
+	err := updateARecord(ctx, api, rec, state, ip)
 	if err != nil {
-		sendLogEntry(logCh, r.Domain, fmt.Sprintf("%s: DNS update failed: %v", r.Domain, err))
-		return
+		return "", fmt.Errorf("DNS update failed: %w", err)
 	}
 
-	s.UpdateActiveIP(responsiveIP)
-	sendLogEntry(logCh, r.Domain, fmt.Sprintf("%s: updated to %s (previous: %s)", r.Domain, responsiveIP, activeIP))
+	previous := state.ActiveIP
+	state.ActiveIP = ip
+	return fmt.Sprintf("updated to %s (previous: %s)", ip, previous), nil
 }

@@ -44,5 +44,9 @@ func parseConfig() (Config, error) {
 		return cfg, fmt.Errorf("Unable to decode config into struct, %v", err)
 	}
 
+	if cfg.CheckInterval <= 0 {
+		return cfg, fmt.Errorf("check_interval must be a positive number of seconds")
+	}
+
 	return cfg, nil
 }

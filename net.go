@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	cf "github.com/cloudflare/cloudflare-go"
 )
 
 func createAPIClient(apiKey string) (*cf.API, error) {
-	api, err := cf.NewWithAPIToken(apiKey)
+	api, err := cf.NewWithAPIToken(apiKey, cf.HTTPClient(&http.Client{Timeout: 15 * time.Second}))
 	if err != nil {
 		return api, fmt.Errorf("Error creating Cloudflare client: %v", err)
 	}
@@ -26,8 +27,8 @@ func createHTTPClient() *http.Client {
 	}
 }
 
-func isHTTPResponsive(client *http.Client, ip string) (bool, error) {
-	resp, err := client.Get("http://" + ip)
+func isHTTPResponsive(httpClient *http.Client, ip string) (bool, error) {
+	resp, err := httpClient.Get("http://" + ip)
 	if err != nil {
 		return false, err
 	}
@@ -36,27 +37,20 @@ func isHTTPResponsive(client *http.Client, ip string) (bool, error) {
 	return true, nil
 }
 
-func getResponsiveIP(httpClient *http.Client, r Record, logCh chan<- logEntry) (string, error) {
-	var responsiveIP string
+func getResponsiveIP(httpClient *http.Client, rec Record) (string, error) {
+	var failures []string
 
-	for _, ip := range r.IPs {
-		ipResponsive, err := isHTTPResponsive(httpClient, ip)
+	for _, ip := range rec.IPs {
+		ok, err := isHTTPResponsive(httpClient, ip)
 		if err != nil {
-			sendLogEntry(logCh, r.Domain, fmt.Sprintf("%s: Error checking response for IP %s: %v", r.Domain, ip, err))
+			failures = append(failures, err.Error())
 			continue
 		}
 
-		if !ipResponsive {
-			continue
+		if ok {
+			return ip, nil
 		}
-
-		responsiveIP = ip
-		break // Exit the loop since we found a responsive IP
 	}
 
-	if responsiveIP == "" {
-		return responsiveIP, fmt.Errorf("%s: No responsive IPs found", r.Domain)
-	}
-
-	return responsiveIP, nil
+	return "", fmt.Errorf("%s: No responsive IPs found", strings.Join(failures, "; "))
 }
