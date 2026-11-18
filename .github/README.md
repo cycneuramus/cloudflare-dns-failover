@@ -31,6 +31,8 @@ Open the `config.yml.example` with your preferred text editor and edit the place
 go build .
 ```
 
+Alternatively, you may use the pre-built binary for Linux (AMD64) available on the [release page](https://github.com/cycneuramus/cloudflare-dns-failover/releases).
+
 ## Usage
 
 To start the DNS failover mechanism, simply run the program:

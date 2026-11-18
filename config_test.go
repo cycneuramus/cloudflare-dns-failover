@@ -18,7 +18,7 @@ func resetGlobals(t *testing.T, args ...string) {
 	oldArgs := os.Args
 	oldFlags := pflag.CommandLine
 
-	os.Args = append([]string{"dns-failover"}, args...)
+	os.Args = append([]string{"cloudflare-dns-failover"}, args...)
 	pflag.CommandLine = pflag.NewFlagSet("test", pflag.ContinueOnError)
 	viper.Reset()
 
