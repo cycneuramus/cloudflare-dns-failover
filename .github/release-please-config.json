@@ -7,9 +7,6 @@
   "changelog-path": ".github/CHANGELOG.md",
   "bootstrap-sha": "895be0d4a1fb451db8bd5a869debfe049363a704",
   "packages": {
-    ".": {
-      "release-type": "go",
-      "package-name": "cloudflare-dns-failover"
-    }
+    ".": {}
   }
 }
